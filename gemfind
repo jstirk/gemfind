@@ -1,0 +1,70 @@
+#!/usr/bin/env ruby
+# Searches your local RVM cache for a gem matching the name given, on the current ruby environment.
+#
+# This is handy when you are offline and need to install a gem - it attempts to find where you've installed it before,
+# so as that you can just gem install the path.
+#
+# Usage: gemfile paperclip
+#
+# Examples:
+#
+#   $ gemfind tzinfo-0.3.33 --loosest
+#   /Users/j_stirk/.rvm/gems/ruby-1.9.3-p194@project/cache/paperclip-2.4.5.gem
+#
+#   $ gemfind paperclip-2.7.0 --loose --verbose
+#   Searching RVM for cached gems matching paperclip-2.7.0 on ruby-1.9.3
+#   /Users/j_stirk/.rvm/gems/ruby-1.9.3-p0@project/cache/paperclip-2.7.0.gem
+#   /Users/j_stirk/.rvm/gems/ruby-1.9.3-p125@another/cache/paperclip-2.7.0.gem
+#   /Users/j_stirk/.rvm/gems/ruby-1.9.3-p125@prj1/cache/paperclip-2.7.0.gem
+#   /Users/j_stirk/.rvm/gems/ruby-1.9.3-p125@prj2/cache/paperclip-2.7.0.gem
+#
+#   $ gemfind paperclip-2.7.5 --loose
+#   FAILED: No cached gems matching paperclip-2.7.5 in ruby-1.9.3
+#           Try --loosest to search "ruby"
+#
+# Options:
+#   --verbose : Output a list of all the matching gems. Otherwise, the first match is returned.
+#   --strict  : (default) Search for gems cached for the exact ruby version, including patchlevel
+#   --loose   : Search for gems cached for any patchlevel of the current ruby version
+#   --loosest : Search for gems cached for any version of the current ruby interpreter
+
+PROMPT_MODES = { :patch => 'i v p', :version => 'i v', :interpreter => 'i' }
+
+name = ARGV[0]
+
+mode = PROMPT_MODES[:patch]
+mode = PROMPT_MODES[:version] if ARGV.include?('--loose')
+mode = PROMPT_MODES[:interpreter] if ARGV.include?('--loosest')
+
+verbose = true if ARGV.include?('--verbose')
+
+ruby = %x( rvm-prompt #{mode} ).strip
+
+def find_matches(ruby, name)
+  gem_dirs = %x( ls -1 ~/.rvm/gems/ | grep #{ruby} ).split("\n").collect { |x| "~/.rvm/gems/#{x.strip}/cache" }.reject { |x| !File.exist?(File.expand_path(x)) }
+  gem_dirs = gem_dirs.join(' ')
+
+  matches = %x( find #{gem_dirs} -type f -iname #{name}*.gem ).split("\n").collect(&:strip)
+end
+
+puts "Searching RVM for cached gems matching #{name} on #{ruby}" if verbose
+
+matches = find_matches(ruby, name)
+
+if matches[0] then
+  if verbose then
+    puts matches
+  else
+    puts matches[0]
+  end
+else
+  STDERR << "FAILED: No cached gems matching #{name} in #{ruby}\n"
+  if mode == PROMPT_MODES[:patch] then
+    loose   = %x( rvm-prompt #{PROMPT_MODES[:version]} ).strip
+    STDERR << "        Try --loose to expand search to \"#{loose}\"\n"
+  end
+  if mode != PROMPT_MODES[:interpreter] then
+    loosest = %x( rvm-prompt #{PROMPT_MODES[:interpreter]} ).strip
+    STDERR << "        Try --loosest to search \"#{loosest}\"\n"
+  end
+end
